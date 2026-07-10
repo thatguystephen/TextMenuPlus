@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="TextMenuPlus icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9cbd0"/>
+      <stop offset="0.55" stop-color="#9fa3aa"/>
+      <stop offset="1" stop-color="#737981"/>
+    </linearGradient>
+    <filter id="textShadow" x="-8%" y="-8%" width="116%" height="124%">
+      <feDropShadow dx="0" dy="8" stdDeviation="5" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="248" fill="url(#bg)"/>
+  <rect x="10" y="10" width="1004" height="1004" rx="238" fill="none" stroke="#f7f9fb" stroke-opacity="0.72" stroke-width="14"/>
+  <rect x="34" y="34" width="956" height="956" rx="214" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="22"/>
+  <rect x="50" y="50" width="924" height="924" rx="198" fill="none" stroke="#606770" stroke-opacity="0.22" stroke-width="12"/>
+  <text x="70" y="778"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Helvetica, Arial, sans-serif"
+        font-size="705"
+        font-weight="760"
+        fill="#30343a"
+        filter="url(#textShadow)">A</text>
+  <text x="515" y="778"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Helvetica, Arial, sans-serif"
+        font-size="525"
+        font-weight="680"
+        fill="#30343a"
+        filter="url(#textShadow)">a</text>
+  <path d="M804 286v514" stroke="#f2b900" stroke-width="32" stroke-linecap="round"/>
+  <path d="M776 286h56" stroke="#f2b900" stroke-width="32" stroke-linecap="round"/>
+  <path d="M776 800h56" stroke="#f2b900" stroke-width="32" stroke-linecap="round"/>
+</svg>

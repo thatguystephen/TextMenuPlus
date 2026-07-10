@@ -1,0 +1,7 @@
+.theos/
+packages/
+*.deb
+*.dSYM/
+*.log
+*.disable
+.DS_Store
