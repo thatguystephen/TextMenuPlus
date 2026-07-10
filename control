@@ -7,3 +7,6 @@ Maintainer: schlub51
 Author: schlub51
 Section: Tweaks
 Depends: firmware (>= 16.0), mobilesubstrate
+Depiction: https://schlub51.github.io/repo/depictions/textmenuplus/depiction.html
+SileoDepiction: https://schlub51.github.io/repo/depictions/textmenuplus/sileo.json
+Icon: https://schlub51.github.io/repo/depictions/textmenuplus/icon.png
