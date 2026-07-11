@@ -27,6 +27,13 @@ static NSString *FSTitleForElement(id element);
 static SEL FSActionForElement(id element);
 static NSString *FSMarkerFromSender(id sender);
 
+@interface FSTextMenuPlusWeakViewHolder : NSObject
+@property (nonatomic, weak) UIView *object;
+@end
+
+@implementation FSTextMenuPlusWeakViewHolder
+@end
+
 static NSString *FSLogPath(void) {
 	NSString *temporaryDirectory = NSTemporaryDirectory();
 	if(temporaryDirectory.length == 0) {
@@ -275,8 +282,9 @@ static void FSStyleMenuCell(UICollectionViewCell *cell) {
 		return;
 	}
 
-	UILabel *titleLabel = objc_getAssociatedObject(cell, &FSStyledTitleLabelKey);
-	if([titleLabel isKindOfClass:[UILabel class]] && titleLabel.text.length > 0) {
+	FSTextMenuPlusWeakViewHolder *titleLabelHolder = objc_getAssociatedObject(cell, &FSStyledTitleLabelKey);
+	UILabel *titleLabel = [titleLabelHolder.object isKindOfClass:[UILabel class]] ? (UILabel *)titleLabelHolder.object : nil;
+	if([titleLabel isKindOfClass:[UILabel class]] && titleLabel.text.length > 0 && [titleLabel isDescendantOfView:cell]) {
 		NSString *normalizedTitle = FSNormalizedMenuTitle(titleLabel.text);
 		NSString *styledTitle = objc_getAssociatedObject(cell, &FSStyledTitleKey);
 		if([styledTitle isEqualToString:normalizedTitle]) {
@@ -306,7 +314,9 @@ static void FSStyleMenuCell(UICollectionViewCell *cell) {
 				titleLabel = label;
 			}
 		}
-		objc_setAssociatedObject(cell, &FSStyledTitleLabelKey, titleLabel, OBJC_ASSOCIATION_ASSIGN);
+		FSTextMenuPlusWeakViewHolder *holder = [FSTextMenuPlusWeakViewHolder new];
+		holder.object = titleLabel;
+		objc_setAssociatedObject(cell, &FSStyledTitleLabelKey, holder, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	} else {
 		titleLabel.textAlignment = NSTextAlignmentLeft;
 	}
@@ -1195,6 +1205,12 @@ static NSString *FSSpongebobText(NSString *text) {
 %end
 
 %hook _UIEditMenuListViewCell
+
+- (void)prepareForReuse {
+	%orig;
+	objc_setAssociatedObject((id)self, &FSStyledTitleKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
+	objc_setAssociatedObject((id)self, &FSStyledTitleLabelKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
 - (void)layoutSubviews {
 	%orig;
