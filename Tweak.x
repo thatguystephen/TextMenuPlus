@@ -718,9 +718,8 @@ static BOOL FSReplaceSelectedTextViaTextStorage(id target, NSString *replacement
 		return NO;
 	}
 
-	NSAttributedString *attributedReplacement = [[NSAttributedString alloc] initWithString:replacement ?: @""];
 	[textStorage beginEditing];
-	[textStorage replaceCharactersInRange:selectedRange withAttributedString:attributedReplacement];
+	[textStorage replaceCharactersInRange:selectedRange withString:replacement ?: @""];
 	[textStorage endEditing];
 	[target setSelectedRange:NSMakeRange(selectedRange.location, replacement.length)];
 	return YES;
@@ -824,7 +823,9 @@ static NSDictionary *FSReverseStyleInfoMap(void) {
 				   ![styled isEqualToString:plain]) {
 					NSDictionary *existingInfo = [map objectForKey:styled];
 					NSString *existingPlain = [existingInfo objectForKey:@"plain"];
-					if(existingInfo == nil || FSPlainCandidateShouldReplace(existingPlain, plain)) {
+					NSString *existingName = [existingInfo objectForKey:@"name"];
+					if(existingInfo == nil ||
+					   ([existingName isEqualToString:name] && FSPlainCandidateShouldReplace(existingPlain, plain))) {
 						[map setObject:@{@"plain": plain, @"name": name} forKey:styled];
 					}
 				}
@@ -900,14 +901,22 @@ static NSString *FSStyleNameFromText(NSString *text) {
 		return nil;
 	}
 
-	__block NSString *dominantName = nil;
-	__block NSUInteger dominantCount = 0;
-	[counts enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSNumber *count, BOOL *stop) {
+	NSString *dominantName = nil;
+	NSUInteger dominantCount = 0;
+	for(NSDictionary *style in FSStyleDefinitions()) {
+		if(![style isKindOfClass:[NSDictionary class]]) {
+			continue;
+		}
+		NSString *name = [style objectForKey:@"name"];
+		if(![name isKindOfClass:[NSString class]]) {
+			continue;
+		}
+		NSNumber *count = [counts objectForKey:name];
 		if(count.unsignedIntegerValue > dominantCount) {
 			dominantName = name;
 			dominantCount = count.unsignedIntegerValue;
 		}
-	}];
+	}
 
 	if(dominantCount * 2 < styledCount) {
 		return nil;
