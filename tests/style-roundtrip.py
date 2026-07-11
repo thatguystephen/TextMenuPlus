@@ -7,7 +7,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLIST = ROOT / "Resources" / "com.schlub51.textmenuplus.styles.plist"
-DETECTABLE = {"bold", "italic", "boldItalic", "mono"}
+WHITELISTED_STYLES = [
+    "bold",
+    "italic",
+    "boldItalic",
+    "mono",
+    "serifBold",
+    "serifItalic",
+    "serifBoldItalic",
+    "script",
+    "scriptBold",
+    "gothic",
+    "gothicBold",
+    "hollow",
+    "circled",
+]
+DETECTABLE = set(WHITELISTED_STYLES)
 CORPUS = [
     "hello world",
     "HELLO WORLD",
@@ -147,7 +162,28 @@ def assert_true(condition, label):
         sys.exit(1)
 
 
-for style_name in ["bold", "italic", "boldItalic", "mono"]:
+def assert_no_whitelisted_cross_ambiguity():
+    seen = {}
+    collisions = []
+    for style_name in WHITELISTED_STYLES:
+        for plain, styled in BY_NAME[style_name].get("map", {}).items():
+            if not styled or styled == plain:
+                continue
+            existing = seen.get(styled)
+            if existing is None:
+                seen[styled] = (style_name, plain)
+            elif existing != (style_name, plain):
+                collisions.append((styled, existing, (style_name, plain)))
+    if collisions:
+        print("FAIL whitelisted cross-style ambiguity:", file=sys.stderr)
+        for styled, first, second in collisions:
+            print(f"  {styled!r}: {first!r} vs {second!r}", file=sys.stderr)
+        sys.exit(1)
+
+
+assert_no_whitelisted_cross_ambiguity()
+
+for style_name in WHITELISTED_STYLES:
     for text in CORPUS:
         styled = apply_style(text, style_name)
         assert_equal(plain_text(styled), text, f"{style_name} plain round-trip for {text!r}")
@@ -162,4 +198,4 @@ assert_true("И" in russian_artifacts and "Д" in russian_artifacts, "russian ar
 assert_equal(plain_text(russian_artifacts), "na", "russian artifacts cleaned by plain")
 assert_equal(style_name_from_text(russian_artifacts), None, "russian artifacts are not auto-detected")
 
-print("style round-trip tests passed: 4 detectable styles, uppercase anti-regression, russian artifact cleanup")
+print("style round-trip tests passed: 13 detectable styles, 0 whitelisted ambiguities, uppercase anti-regression, russian artifact cleanup")

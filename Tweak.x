@@ -19,6 +19,7 @@ static NSDictionary *FSReverseStyleMap(void);
 static NSString *FSPlainTextFromStyledText(NSString *text);
 static NSString *FSPlainTextForTransform(NSString *text);
 static NSString *FSApplyStyleMap(NSString *text, NSDictionary *map);
+static NSString *FSApplyStyleName(NSString *text, NSString *styleName);
 static NSString *FSApplyCombineStyle(NSString *text, NSString *combine);
 static NSString *FSRenderTextWithState(NSString *plainText, NSString *styleName, NSString *combineName);
 static NSString *FSApplyTextTransformPreservingState(NSString *text, NSString *(^transform)(NSString *plainText));
@@ -203,6 +204,7 @@ static NSArray *FSSymbolNamesForMenuTitle(NSString *title) {
 			@"Mono": @[@"curlybraces"],
 			@"Format": @[@"bold", @"italic", @"underline"],
 			@"Text Case": @[@"textformat", @"textformat.abc"],
+			@"Text Style": @[@"f.cursive", @"character", @"textformat"],
 			@"Indentation": @[@"increase.indent", @"decrease.indent"],
 			@"Increase": @[@"increase.indent"],
 			@"Decrease": @[@"decrease.indent"],
@@ -427,6 +429,28 @@ static BOOL FSElementIsScanTextCommand(id element) {
 	return FSActionForElement(element) == @selector(captureTextFromCamera:);
 }
 
+static BOOL FSElementIsNativeFormattingCommand(id element) {
+	SEL action = FSActionForElement(element);
+	return action == @selector(toggleBoldface:) ||
+	       action == @selector(toggleItalics:) ||
+	       action == @selector(toggleUnderline:);
+}
+
+static BOOL FSChildrenHaveNativeFormatting(NSArray *children) {
+	if(![children isKindOfClass:[NSArray class]]) {
+		return NO;
+	}
+	for(id child in children) {
+		if(FSElementIsNativeFormattingCommand(child)) {
+			return YES;
+		}
+		if([child isKindOfClass:[UIMenu class]] && FSChildrenHaveNativeFormatting([(UIMenu *)child children])) {
+			return YES;
+		}
+	}
+	return NO;
+}
+
 static BOOL FSElementTitleContainsWords(id element, NSArray<NSString *> *words) {
 	NSString *title = FSNormalizedMenuTitle(FSTitleForElement(element));
 	if(title.length == 0) {
@@ -494,11 +518,37 @@ static UIMenu *FSCreateTextCaseMenu(NSArray *children) {
 	return [UIMenu menuWithTitle:@"Text Case"
 	                       image:image
 	                  identifier:nil
+	                    options:0
+	                    children:children];
+}
+
+static UICommand *FSCreateStyleCommand(NSString *title, NSString *styleName) {
+	NSString *styledTitle = FSApplyStyleName(title, styleName);
+	if(styledTitle.length == 0) {
+		styledTitle = title;
+	}
+	return FSCreateMenuCommand(styledTitle,
+	                           @selector(tmpTextMenuPlusApplyStyle:),
+	                           [@"style." stringByAppendingString:styleName],
+	                           nil);
+}
+
+static UIMenu *FSCreateTextStyleMenu(NSArray *children) {
+	UIImage *image = [UIImage systemImageNamed:@"f.cursive"];
+	if(image == nil) {
+		image = [UIImage systemImageNamed:@"character"];
+	}
+	if(image == nil) {
+		image = [UIImage systemImageNamed:@"textformat"];
+	}
+	return [UIMenu menuWithTitle:@"Text Style"
+	                       image:image
+	                  identifier:nil
 	                     options:0
 	                    children:children];
 }
 
-static NSArray *FSPrimaryInlineMenus(void) {
+static NSArray *FSPrimaryInlineMenus(BOOL hasNativeFormatting) {
 	NSArray *systemCommands = @[
 		FSCreateMenuCommand(@"Undo", @selector(tmpTextMenuPlusSystemUndo:), @"system.undo", @"arrow.uturn.backward"),
 		FSCreateMenuCommand(@"Redo", @selector(tmpTextMenuPlusSystemRedo:), @"system.redo", @"arrow.uturn.forward"),
@@ -510,7 +560,37 @@ static NSArray *FSPrimaryInlineMenus(void) {
 		FSCreateMenuCommand(@"Lower", @selector(tmpTextMenuPlusLowercase:), @"lowercase", @"textformat.size.smaller"),
 		FSCreateMenuCommand(@"Caps", @selector(tmpTextMenuPlusCapitalized:), @"capitalized", @"textformat.abc")
 	];
-	return @[FSCreateInlineMenu(systemCommands), FSCreateTextCaseMenu(textCommands)];
+	NSMutableArray *styleMenus = [NSMutableArray array];
+	if(!hasNativeFormatting) {
+		[styleMenus addObject:FSCreateInlineMenu(@[
+			FSCreateStyleCommand(@"Bold", @"bold"),
+			FSCreateStyleCommand(@"Italic", @"italic"),
+			FSCreateStyleCommand(@"Bold Italic", @"boldItalic")
+		])];
+	}
+	[styleMenus addObjectsFromArray:@[
+		FSCreateInlineMenu(@[
+			FSCreateStyleCommand(@"Mono", @"mono")
+		]),
+		FSCreateInlineMenu(@[
+			FSCreateStyleCommand(@"Serif Bold", @"serifBold"),
+			FSCreateStyleCommand(@"Serif Italic", @"serifItalic"),
+			FSCreateStyleCommand(@"Serif Bold Italic", @"serifBoldItalic")
+		]),
+		FSCreateInlineMenu(@[
+			FSCreateStyleCommand(@"Script", @"script"),
+			FSCreateStyleCommand(@"Script Bold", @"scriptBold")
+		]),
+		FSCreateInlineMenu(@[
+			FSCreateStyleCommand(@"Gothic", @"gothic"),
+			FSCreateStyleCommand(@"Gothic Bold", @"gothicBold")
+		]),
+		FSCreateInlineMenu(@[
+			FSCreateStyleCommand(@"Hollow", @"hollow"),
+			FSCreateStyleCommand(@"CIRCLED", @"circled")
+		])
+	]];
+	return @[FSCreateInlineMenu(systemCommands), FSCreateTextCaseMenu(textCommands), FSCreateTextStyleMenu(styleMenus)];
 }
 
 static NSString *FSMarkerFromSender(id sender) {
@@ -559,6 +639,7 @@ static NSArray *FSChildrenByAddingProbe(NSArray *children, BOOL *changed) {
 	}
 
 	BOOL alreadyHasTextMenuPlusCommands = NO;
+	BOOL hasNativeFormatting = FSChildrenHaveNativeFormatting(children);
 	for(id child in children) {
 		if(FSElementIsTextMenuPlusCommand(child)) {
 			alreadyHasTextMenuPlusCommands = YES;
@@ -624,7 +705,7 @@ static NSArray *FSChildrenByAddingProbe(NSArray *children, BOOL *changed) {
 			[updatedChildren addObject:updatedChild];
 		}
 		if(wasPasteCommand && !alreadyHasTextMenuPlusCommands) {
-			[updatedChildren addObjectsFromArray:FSPrimaryInlineMenus()];
+			[updatedChildren addObjectsFromArray:FSPrimaryInlineMenus(hasNativeFormatting)];
 			if(changed != NULL) {
 				*changed = YES;
 			}
@@ -803,7 +884,7 @@ static BOOL FSStyleNameCanBeDetected(NSString *name) {
 	static NSSet *detectableNames = nil;
 	static dispatch_once_t onceToken;
 	dispatch_once(&onceToken, ^{
-		detectableNames = [NSSet setWithObjects:@"bold", @"italic", @"boldItalic", @"mono", nil];
+		detectableNames = [NSSet setWithObjects:@"bold", @"italic", @"boldItalic", @"mono", @"serifBold", @"serifItalic", @"serifBoldItalic", @"script", @"scriptBold", @"gothic", @"gothicBold", @"hollow", @"circled", nil];
 	});
 	return [detectableNames containsObject:name];
 }
@@ -952,8 +1033,6 @@ static NSString *FSCombineStyleNameFromText(NSString *text) {
 	}
 	return nil;
 }
-
-static NSString *FSApplyStyleName(NSString *text, NSString *styleName);
 
 static NSDictionary *FSReverseStyleMap(void) {
 	static NSDictionary *reverseMap = nil;
@@ -1273,10 +1352,7 @@ static NSString *FSSpongebobText(NSString *text) {
 	   action == @selector(tmpTextMenuPlusPlain:) ||
 	   action == @selector(tmpTextMenuPlusUppercase:) ||
 	   action == @selector(tmpTextMenuPlusLowercase:) ||
-	   action == @selector(tmpTextMenuPlusCapitalized:) ||
-	   action == @selector(tmpTextMenuPlusBoldStyle:) ||
-	   action == @selector(tmpTextMenuPlusItalicStyle:) ||
-	   action == @selector(tmpTextMenuPlusMonoStyle:)) {
+	   action == @selector(tmpTextMenuPlusCapitalized:)) {
 		return FSCanTransformText(self);
 	}
 	if(action == @selector(tmpTextMenuPlusApplyStyle:) ||
@@ -1359,21 +1435,6 @@ static NSString *FSSpongebobText(NSString *text) {
 			return [plainText capitalizedString];
 		});
 	}, @"tmpTextMenuPlusCapitalized", sender);
-}
-
-%new
-- (void)tmpTextMenuPlusBoldStyle:(id)sender {
-	FSReplaceSelectedTextWithStyle(self, @"bold", @"tmpTextMenuPlusBoldStyle", sender);
-}
-
-%new
-- (void)tmpTextMenuPlusItalicStyle:(id)sender {
-	FSReplaceSelectedTextWithStyle(self, @"italic", @"tmpTextMenuPlusItalicStyle", sender);
-}
-
-%new
-- (void)tmpTextMenuPlusMonoStyle:(id)sender {
-	FSReplaceSelectedTextWithStyle(self, @"mono", @"tmpTextMenuPlusMonoStyle", sender);
 }
 
 %new

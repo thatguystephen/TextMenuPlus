@@ -801,29 +801,29 @@
 			<key>A</key>
 			<string>𝒜</string>
 			<key>B</key>
-			<string>𝐵</string>
+			<string>ℬ</string>
 			<key>C</key>
 			<string>𝒞</string>
 			<key>D</key>
 			<string>𝒟</string>
 			<key>E</key>
-			<string>𝐸</string>
+			<string>ℰ</string>
 			<key>F</key>
-			<string>𝐹</string>
+			<string>ℱ</string>
 			<key>G</key>
 			<string>𝒢</string>
 			<key>H</key>
-			<string>𝐻</string>
+			<string>ℋ</string>
 			<key>I</key>
-			<string>𝐼</string>
+			<string>ℐ</string>
 			<key>J</key>
 			<string>𝒥</string>
 			<key>K</key>
 			<string>𝒦</string>
 			<key>L</key>
-			<string>𝐿</string>
+			<string>ℒ</string>
 			<key>M</key>
-			<string>𝑀</string>
+			<string>ℳ</string>
 			<key>N</key>
 			<string>𝒩</string>
 			<key>O</key>
@@ -833,7 +833,7 @@
 			<key>Q</key>
 			<string>𝒬</string>
 			<key>R</key>
-			<string>𝑅</string>
+			<string>ℛ</string>
 			<key>S</key>
 			<string>𝒮</string>
 			<key>T</key>
@@ -859,11 +859,11 @@
 			<key>d</key>
 			<string>𝒹</string>
 			<key>e</key>
-			<string>𝑒</string>
+			<string>ℯ</string>
 			<key>f</key>
 			<string>𝒻</string>
 			<key>g</key>
-			<string>𝑔</string>
+			<string>ℊ</string>
 			<key>h</key>
 			<string>𝒽</string>
 			<key>i</key>
@@ -879,7 +879,7 @@
 			<key>n</key>
 			<string>𝓃</string>
 			<key>o</key>
-			<string>𝑜</string>
+			<string>ℴ</string>
 			<key>p</key>
 			<string>𝓅</string>
 			<key>q</key>
