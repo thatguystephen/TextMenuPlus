@@ -1,6 +1,6 @@
 Package: com.schlub51.textmenuplus
 Name: TextMenuPlus
-Version: 1.0.0
+Version: 1.0.1
 Architecture: iphoneos-arm64
 Description: Compact vertical edit menu for iOS 16 rootless.
 Maintainer: schlub51

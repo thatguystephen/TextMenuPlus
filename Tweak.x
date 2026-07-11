@@ -9,9 +9,8 @@ static NSString *const FSStylesPath = @"/var/jb/Library/Application Support/Text
 
 static char FSAssociatedMarkerKey;
 static char FSNativeIconConstraintsKey;
-static UIView *FSPanelOverlay = nil;
-static __weak id FSLastTextTarget = nil;
-static NSTimeInterval FSLastAutoPanelTime = 0;
+static char FSStyledTitleKey;
+static char FSStyledTitleLabelKey;
 static NSInteger const FSMenuIconTag = 0x46534943;
 
 static NSArray *FSStyleDefinitions(void);
@@ -24,8 +23,6 @@ static NSString *FSApplyStyleMap(NSString *text, NSDictionary *map);
 static NSString *FSApplyCombineStyle(NSString *text, NSString *combine);
 static NSString *FSRenderTextWithState(NSString *plainText, NSString *styleName, NSString *combineName);
 static NSString *FSApplyTextTransformPreservingState(NSString *text, NSString *(^transform)(NSString *plainText));
-static void FSDismissPanel(void);
-static void FSShowPanelForTarget(id target);
 static NSString *FSTitleForElement(id element);
 static SEL FSActionForElement(id element);
 static NSString *FSMarkerFromSender(id sender);
@@ -39,7 +36,25 @@ static NSString *FSLogPath(void) {
 }
 
 static BOOL FSDisabled(void) {
-	return [[NSFileManager defaultManager] fileExistsAtPath:FSDisablePath];
+	static BOOL cachedDisabled = NO;
+	static CFAbsoluteTime lastCheck = 0;
+	CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+	if(now - lastCheck > 2.0) {
+		cachedDisabled = [[NSFileManager defaultManager] fileExistsAtPath:FSDisablePath];
+		lastCheck = now;
+	}
+	return cachedDisabled;
+}
+
+static BOOL FSDebugEnabled(void) {
+	static BOOL cachedDebugEnabled = NO;
+	static CFAbsoluteTime lastCheck = 0;
+	CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+	if(now - lastCheck > 2.0) {
+		cachedDebugEnabled = [[NSFileManager defaultManager] fileExistsAtPath:FSDebugPath];
+		lastCheck = now;
+	}
+	return cachedDebugEnabled;
 }
 
 static BOOL FSProcessAllowed(void) {
@@ -69,7 +84,7 @@ static void FSLog(NSString *message) {
 	if(!FSShouldRun()) {
 		return;
 	}
-	if(![[NSFileManager defaultManager] fileExistsAtPath:FSDebugPath]) {
+	if(!FSDebugEnabled()) {
 		return;
 	}
 	NSString *processName = [[NSProcessInfo processInfo] processName] ?: @"unknown";
@@ -211,12 +226,23 @@ static NSArray *FSSymbolNamesForMenuTitle(NSString *title) {
 
 static UIImage *FSImageForMenuTitle(NSString *title) {
 	title = FSNormalizedMenuTitle(title);
+	static NSMutableDictionary *imageCache = nil;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		imageCache = [NSMutableDictionary dictionary];
+	});
+	id cached = [imageCache objectForKey:title];
+	if(cached != nil) {
+		return cached == (id)NSNull.null ? nil : cached;
+	}
 	for(NSString *symbolName in FSSymbolNamesForMenuTitle(title)) {
 		UIImage *image = [UIImage systemImageNamed:symbolName];
 		if(image != nil) {
+			[imageCache setObject:image forKey:title];
 			return image;
 		}
 	}
+	[imageCache setObject:NSNull.null forKey:title];
 	return nil;
 }
 
@@ -249,27 +275,49 @@ static void FSStyleMenuCell(UICollectionViewCell *cell) {
 		return;
 	}
 
+	UILabel *titleLabel = objc_getAssociatedObject(cell, &FSStyledTitleLabelKey);
+	if([titleLabel isKindOfClass:[UILabel class]] && titleLabel.text.length > 0) {
+		NSString *normalizedTitle = FSNormalizedMenuTitle(titleLabel.text);
+		NSString *styledTitle = objc_getAssociatedObject(cell, &FSStyledTitleKey);
+		if([styledTitle isEqualToString:normalizedTitle]) {
+			return;
+		}
+	} else {
+		titleLabel = nil;
+	}
+
 	UIView *oldIconView = [cell.contentView viewWithTag:FSMenuIconTag];
 	[oldIconView removeFromSuperview];
 
-	NSMutableArray<UILabel *> *labels = [NSMutableArray array];
-	FSCollectLabels(cell.contentView, labels);
-	if(labels.count == 0) {
-		FSCollectLabels((UIView *)cell, labels);
-	}
-	if(labels.count == 0) {
-		return;
-	}
-
-	UILabel *titleLabel = labels.firstObject;
-	for(UILabel *label in labels) {
-		label.textAlignment = NSTextAlignmentLeft;
-		if(label.text.length > titleLabel.text.length) {
-			titleLabel = label;
+	if(titleLabel == nil) {
+		NSMutableArray<UILabel *> *labels = [NSMutableArray array];
+		FSCollectLabels(cell.contentView, labels);
+		if(labels.count == 0) {
+			FSCollectLabels((UIView *)cell, labels);
 		}
+		if(labels.count == 0) {
+			return;
+		}
+
+		titleLabel = labels.firstObject;
+		for(UILabel *label in labels) {
+			label.textAlignment = NSTextAlignmentLeft;
+			if(label.text.length > titleLabel.text.length) {
+				titleLabel = label;
+			}
+		}
+		objc_setAssociatedObject(cell, &FSStyledTitleLabelKey, titleLabel, OBJC_ASSOCIATION_ASSIGN);
+	} else {
+		titleLabel.textAlignment = NSTextAlignmentLeft;
 	}
 
 	NSString *normalizedTitle = FSNormalizedMenuTitle(titleLabel.text);
+	NSString *styledTitle = objc_getAssociatedObject(cell, &FSStyledTitleKey);
+	if([styledTitle isEqualToString:normalizedTitle]) {
+		return;
+	}
+	objc_setAssociatedObject(cell, &FSStyledTitleKey, normalizedTitle, OBJC_ASSOCIATION_COPY_NONATOMIC);
+
 	UIImage *symbolImage = FSImageForMenuTitle(normalizedTitle);
 
 	UIStackView *stackView = FSFindMenuStackView(cell.contentView);
@@ -327,18 +375,21 @@ static void FSStyleMenuCell(UICollectionViewCell *cell) {
 	}
 }
 
-static void FSStyleVisibleMenuCells(UIView *rootView) {
+static NSUInteger FSStyleVisibleMenuCells(UIView *rootView) {
 	if(![rootView isKindOfClass:[UIView class]]) {
-		return;
+		return 0;
 	}
+	NSUInteger styledCount = 0;
 	if([rootView isKindOfClass:[UICollectionView class]]) {
 		for(UICollectionViewCell *cell in [(UICollectionView *)rootView visibleCells]) {
 			FSStyleMenuCell(cell);
+			styledCount++;
 		}
 	}
 	for(UIView *subview in rootView.subviews) {
-		FSStyleVisibleMenuCells(subview);
+		styledCount += FSStyleVisibleMenuCells(subview);
 	}
+	return styledCount;
 }
 
 static NSString *FSTitleForElement(id element) {
@@ -353,11 +404,6 @@ static SEL FSActionForElement(id element) {
 		return [element action];
 	}
 	return NULL;
-}
-
-static BOOL FSElementIsCopyCommand(id element) {
-	SEL action = FSActionForElement(element);
-	return action == @selector(copy:) && [FSTitleForElement(element) isEqualToString:@"Copy"];
 }
 
 static BOOL FSElementIsPasteCommand(id element) {
@@ -472,169 +518,6 @@ static NSString *FSMarkerFromSender(id sender) {
 	return nil;
 }
 
-static UIWindow *FSActiveWindow(void) {
-	for(UIWindow *window in [[UIApplication sharedApplication] windows]) {
-		if(window.isKeyWindow) {
-			return window;
-		}
-	}
-	return [[[UIApplication sharedApplication] windows] lastObject];
-}
-
-static void FSDismissPanel(void) {
-	[FSPanelOverlay removeFromSuperview];
-	FSPanelOverlay = nil;
-}
-
-static void FSRememberTextTarget(id target) {
-	if(target != nil) {
-		FSLastTextTarget = target;
-	}
-}
-
-static void FSRequestAutoPanel(NSString *source) {
-	(void)source;
-	return;
-
-	id target = FSLastTextTarget;
-	if(target == nil || FSPanelOverlay != nil) {
-		return;
-	}
-
-	NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-	if(now - FSLastAutoPanelTime < 0.45) {
-		return;
-	}
-	FSLastAutoPanelTime = now;
-
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.08 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-		id currentTarget = FSLastTextTarget;
-				if(currentTarget != nil && FSPanelOverlay == nil && FSShouldRun()) {
-			FSLog([NSString stringWithFormat:@"%@ auto-show vertical panel target=%@", source, NSStringFromClass([currentTarget class])]);
-			FSShowPanelForTarget(currentTarget);
-		}
-	});
-}
-
-static UIButton *FSCreatePanelButton(NSString *title, SEL action, NSString *marker, id target) {
-	UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-	button.translatesAutoresizingMaskIntoConstraints = NO;
-	button.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.12];
-	button.layer.cornerRadius = 8.0;
-	button.layer.borderWidth = 1.0 / [UIScreen mainScreen].scale;
-	button.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.18].CGColor;
-	button.contentEdgeInsets = UIEdgeInsetsMake(8, 8, 8, 8);
-	button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-	button.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-	button.titleLabel.numberOfLines = 1;
-	button.titleLabel.adjustsFontSizeToFitWidth = YES;
-	button.titleLabel.minimumScaleFactor = 0.72;
-	[button setTitle:title forState:UIControlStateNormal];
-	[button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-	[button addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
-	if(marker.length > 0) {
-		objc_setAssociatedObject(button, &FSAssociatedMarkerKey, [FSPropertyListPrefix stringByAppendingString:marker], OBJC_ASSOCIATION_COPY_NONATOMIC);
-	}
-	[button.heightAnchor constraintEqualToConstant:36.0].active = YES;
-	return button;
-}
-
-static UILabel *FSCreatePanelHeader(NSString *title) {
-	UILabel *label = [[UILabel alloc] init];
-	label.translatesAutoresizingMaskIntoConstraints = NO;
-	label.text = title;
-	label.textColor = [UIColor colorWithWhite:1.0 alpha:0.72];
-	label.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
-	label.textAlignment = NSTextAlignmentLeft;
-	return label;
-}
-
-static void FSAddPanelSection(UIStackView *content, NSString *title, NSArray<UIButton *> *buttons) {
-	if(buttons.count == 0) {
-		return;
-	}
-
-	[content addArrangedSubview:FSCreatePanelHeader(title)];
-	for(UIButton *button in buttons) {
-		[content addArrangedSubview:button];
-	}
-}
-
-static void FSShowPanelForTarget(id target) {
-	UIWindow *window = FSActiveWindow();
-	if(window == nil) {
-		return;
-	}
-
-	FSDismissPanel();
-
-	UIView *overlay = [[UIView alloc] initWithFrame:window.bounds];
-	overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-	overlay.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.18];
-	FSPanelOverlay = overlay;
-
-	UIControl *dismissControl = [[UIControl alloc] initWithFrame:overlay.bounds];
-	dismissControl.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-	[dismissControl addTarget:target action:@selector(tmpTextMenuPlusDismissPanel:) forControlEvents:UIControlEventTouchUpInside];
-	[overlay addSubview:dismissControl];
-
-	UIVisualEffectView *panel = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark]];
-	panel.translatesAutoresizingMaskIntoConstraints = NO;
-	panel.layer.cornerRadius = 14.0;
-	panel.layer.masksToBounds = YES;
-	[overlay addSubview:panel];
-
-	UIScrollView *scrollView = [[UIScrollView alloc] init];
-	scrollView.translatesAutoresizingMaskIntoConstraints = NO;
-	scrollView.alwaysBounceVertical = YES;
-	[panel.contentView addSubview:scrollView];
-
-	UIStackView *content = [[UIStackView alloc] init];
-	content.translatesAutoresizingMaskIntoConstraints = NO;
-	content.axis = UILayoutConstraintAxisVertical;
-	content.spacing = 6.0;
-	content.layoutMargins = UIEdgeInsetsMake(10, 10, 10, 10);
-	content.layoutMarginsRelativeArrangement = YES;
-	[scrollView addSubview:content];
-
-	NSArray *systemButtons = @[
-		FSCreatePanelButton(@"Cut", @selector(tmpTextMenuPlusSystemCut:), nil, target),
-		FSCreatePanelButton(@"Copy", @selector(tmpTextMenuPlusSystemCopy:), nil, target),
-		FSCreatePanelButton(@"Paste", @selector(tmpTextMenuPlusSystemPaste:), nil, target),
-		FSCreatePanelButton(@"Select All", @selector(tmpTextMenuPlusSystemSelectAll:), nil, target),
-		FSCreatePanelButton(@"Undo", @selector(tmpTextMenuPlusSystemUndo:), nil, target),
-		FSCreatePanelButton(@"Redo", @selector(tmpTextMenuPlusSystemRedo:), nil, target)
-	];
-	NSArray *textButtons = @[
-		FSCreatePanelButton(@"Plain", @selector(tmpTextMenuPlusPlain:), @"plain", target),
-		FSCreatePanelButton(@"Upper", @selector(tmpTextMenuPlusUppercase:), @"uppercase", target),
-		FSCreatePanelButton(@"Lower", @selector(tmpTextMenuPlusLowercase:), @"lowercase", target),
-		FSCreatePanelButton(@"Caps", @selector(tmpTextMenuPlusCapitalized:), @"capitalized", target)
-	];
-	FSAddPanelSection(content, @"System", systemButtons);
-	FSAddPanelSection(content, @"Text", textButtons);
-
-	CGFloat width = MIN(236.0, CGRectGetWidth(window.bounds) - 24.0);
-	CGFloat height = MIN(392.0, CGRectGetHeight(window.bounds) - 150.0);
-	[NSLayoutConstraint activateConstraints:@[
-		[panel.centerXAnchor constraintEqualToAnchor:overlay.centerXAnchor],
-		[panel.topAnchor constraintEqualToAnchor:overlay.safeAreaLayoutGuide.topAnchor constant:74.0],
-		[panel.widthAnchor constraintEqualToConstant:width],
-		[panel.heightAnchor constraintEqualToConstant:height],
-		[scrollView.topAnchor constraintEqualToAnchor:panel.contentView.topAnchor],
-		[scrollView.leadingAnchor constraintEqualToAnchor:panel.contentView.leadingAnchor],
-		[scrollView.trailingAnchor constraintEqualToAnchor:panel.contentView.trailingAnchor],
-		[scrollView.bottomAnchor constraintEqualToAnchor:panel.contentView.bottomAnchor],
-		[content.topAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.topAnchor],
-		[content.leadingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.leadingAnchor],
-		[content.trailingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.trailingAnchor],
-		[content.bottomAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.bottomAnchor],
-		[content.widthAnchor constraintEqualToAnchor:scrollView.frameLayoutGuide.widthAnchor]
-	]];
-
-	[window addSubview:overlay];
-}
-
 static NSString *FSStyleNameFromSender(id sender) {
 	NSString *propertyList = FSMarkerFromSender(sender);
 	if(![propertyList isKindOfClass:[NSString class]] ||
@@ -702,10 +585,6 @@ static NSArray *FSChildrenByAddingProbe(NSArray *children, BOOL *changed) {
 					*changed = YES;
 				}
 			}
-		}
-
-		if(FSElementIsCopyCommand(updatedChild)) {
-			FSRequestAutoPanel(@"FSChildrenByAddingProbe");
 		}
 
 		BOOL wasPasteCommand = FSElementIsPasteCommand(updatedChild);
@@ -851,8 +730,7 @@ static void FSReplaceSelectedText(id target, NSString *(^transform)(NSString *te
 	if(!replacedViaTextStorage) {
 		[textInput replaceRange:range withText:replacement];
 	}
-	FSDismissPanel();
-	FSLog([NSString stringWithFormat:@"%@ replaced %lu chars target=%@ sender=%@",
+		FSLog([NSString stringWithFormat:@"%@ replaced %lu chars target=%@ sender=%@",
 		actionName,
 		(unsigned long)selectedText.length,
 		NSStringFromClass([target class]),
@@ -861,7 +739,6 @@ static void FSReplaceSelectedText(id target, NSString *(^transform)(NSString *te
 
 static void FSPerformSystemAction(id target, SEL action, id sender, NSString *actionName) {
 	BOOL sent = [[UIApplication sharedApplication] sendAction:action to:target from:sender forEvent:nil];
-	FSDismissPanel();
 	FSLog([NSString stringWithFormat:@"%@ sent=%d target=%@", actionName, sent, NSStringFromClass([target class])]);
 }
 
@@ -1275,10 +1152,14 @@ static NSString *FSSpongebobText(NSString *text) {
 	if(!FSShouldRun()) {
 		return;
 	}
-	FSStyleVisibleMenuCells((UIView *)self);
-	dispatch_async(dispatch_get_main_queue(), ^{
+	if(FSDebugEnabled()) {
+		CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+		NSUInteger styledCount = FSStyleVisibleMenuCells((UIView *)self);
+		CFAbsoluteTime elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0;
+		FSLog([NSString stringWithFormat:@"menu style: %lu cells, %.1fms", (unsigned long)styledCount, elapsed]);
+	} else {
 		FSStyleVisibleMenuCells((UIView *)self);
-	});
+	}
 }
 
 - (CGSize)_verticalMenuContentSizeFittingContainer:(id)container containerSize:(CGSize)containerSize traits:(id)traits {
@@ -1321,29 +1202,6 @@ static NSString *FSSpongebobText(NSString *text) {
 		return;
 	}
 	FSStyleMenuCell((UICollectionViewCell *)self);
-	dispatch_async(dispatch_get_main_queue(), ^{
-		FSStyleMenuCell((UICollectionViewCell *)self);
-	});
-}
-
-%end
-
-%hook _UIEditMenuInteractionMenuController
-
-- (void)_presentEditMenu {
-	if(!FSShouldRun()) {
-		%orig;
-		return;
-	}
-	%orig;
-}
-
-- (void)showMenuFromView:(id)view rect:(CGRect)rect {
-	if(!FSShouldRun()) {
-		%orig(view, rect);
-		return;
-	}
-	%orig(view, rect);
 }
 
 %end
@@ -1358,14 +1216,6 @@ static NSString *FSSpongebobText(NSString *text) {
 	return 1;
 }
 
-- (void)_displayMenu:(id)menu reason:(NSInteger)reason {
-	if(!FSShouldRun()) {
-		%orig(menu, reason);
-		return;
-	}
-	%orig(menu, reason);
-}
-
 %end
 
 %hook UIResponder
@@ -1373,9 +1223,6 @@ static NSString *FSSpongebobText(NSString *text) {
 - (BOOL)canPerformAction:(SEL)action withSender:(id)sender {
 	if(!FSShouldRun()) {
 		return %orig(action, sender);
-	}
-	if(FSCanTransformText(self)) {
-		FSRememberTextTarget(self);
 	}
 	if(action == @selector(tmpTextMenuPlusSystemPaste:)) {
 		return %orig(@selector(paste:), sender);
@@ -1386,8 +1233,7 @@ static NSString *FSSpongebobText(NSString *text) {
 	if(action == @selector(tmpTextMenuPlusSystemRedo:)) {
 		return FSCanEditText(self);
 	}
-	if(action == @selector(tmpTextMenuPlusShowPanel:) ||
-	   action == @selector(tmpTextMenuPlusSystemCut:) ||
+	if(action == @selector(tmpTextMenuPlusSystemCut:) ||
 	   action == @selector(tmpTextMenuPlusSystemCopy:) ||
 	   action == @selector(tmpTextMenuPlusSystemSelectAll:) ||
 	   action == @selector(tmpTextMenuPlusPlain:) ||
@@ -1405,16 +1251,6 @@ static NSString *FSSpongebobText(NSString *text) {
 		return FSCanTransformText(self);
 	}
 	return %orig(action, sender);
-}
-
-%new
-- (void)tmpTextMenuPlusShowPanel:(id)sender {
-	FSShowPanelForTarget(self);
-}
-
-%new
-- (void)tmpTextMenuPlusDismissPanel:(id)sender {
-	FSDismissPanel();
 }
 
 %new
