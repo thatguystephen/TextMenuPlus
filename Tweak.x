@@ -800,6 +800,19 @@ static BOOL FSPlainCandidateShouldReplace(NSString *existingPlain, NSString *new
 	return NO;
 }
 
+static BOOL FSStringIsASCII(NSString *text) {
+	return [text isKindOfClass:[NSString class]] && [text canBeConvertedToEncoding:NSASCIIStringEncoding];
+}
+
+static BOOL FSStyleNameCanBeDetected(NSString *name) {
+	static NSSet *detectableNames = nil;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		detectableNames = [NSSet setWithObjects:@"bold", @"italic", @"boldItalic", @"mono", nil];
+	});
+	return [detectableNames containsObject:name];
+}
+
 static NSDictionary *FSReverseStyleInfoMap(void) {
 	static NSDictionary *reverseMap = nil;
 	static dispatch_once_t onceToken;
@@ -820,7 +833,8 @@ static NSDictionary *FSReverseStyleInfoMap(void) {
 				if([plain isKindOfClass:[NSString class]] &&
 				   [styled isKindOfClass:[NSString class]] &&
 				   styled.length > 0 &&
-				   ![styled isEqualToString:plain]) {
+				   ![styled isEqualToString:plain] &&
+				   !FSStringIsASCII(styled)) {
 					NSDictionary *existingInfo = [map objectForKey:styled];
 					NSString *existingPlain = [existingInfo objectForKey:@"plain"];
 					NSString *existingName = [existingInfo objectForKey:@"name"];
@@ -887,7 +901,7 @@ static NSString *FSStyleNameFromText(NSString *text) {
 		}
 		NSDictionary *info = [reverseMap objectForKey:substring];
 		NSString *name = [info objectForKey:@"name"];
-		if([name isKindOfClass:[NSString class]] && name.length > 0) {
+		if([name isKindOfClass:[NSString class]] && name.length > 0 && FSStyleNameCanBeDetected(name)) {
 			styledCount++;
 			NSNumber *count = [counts objectForKey:name] ?: @0;
 			[counts setObject:@(count.unsignedIntegerValue + 1) forKey:name];
