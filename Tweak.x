@@ -7,7 +7,6 @@ static NSString *const FSDebugPath = @"/var/mobile/textmenuplus.debug";
 static NSString *const FSPropertyListPrefix = @"com.schlub51.textmenuplus.";
 static NSString *const FSStylesPath = @"/var/jb/Library/Application Support/TextMenuPlus/com.schlub51.textmenuplus.styles.plist";
 
-static char FSAssociatedMarkerKey;
 static char FSNativeIconConstraintsKey;
 static char FSStyledTitleKey;
 static char FSStyledTitleLabelKey;
@@ -233,10 +232,10 @@ static NSArray *FSSymbolNamesForMenuTitle(NSString *title) {
 
 static UIImage *FSImageForMenuTitle(NSString *title) {
 	title = FSNormalizedMenuTitle(title);
-	static NSMutableDictionary *imageCache = nil;
+	static NSCache *imageCache = nil;
 	static dispatch_once_t onceToken;
 	dispatch_once(&onceToken, ^{
-		imageCache = [NSMutableDictionary dictionary];
+		imageCache = [NSCache new];
 	});
 	id cached = [imageCache objectForKey:title];
 	if(cached != nil) {
@@ -520,10 +519,6 @@ static NSString *FSMarkerFromSender(id sender) {
 		if([propertyList isKindOfClass:[NSString class]]) {
 			return propertyList;
 		}
-	}
-	id associatedMarker = objc_getAssociatedObject(sender, &FSAssociatedMarkerKey);
-	if([associatedMarker isKindOfClass:[NSString class]]) {
-		return associatedMarker;
 	}
 	return nil;
 }

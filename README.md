@@ -4,6 +4,8 @@ Compact vertical edit menu for iOS 16 rootless jailbreaks.
 
 I missed having a vertical edit menu on iOS 16. Scrolling left and right through the default menu gets old fast.
 
+Vibe-coded project: I'm not a developer, just someone who wanted this tweak to exist.
+
 Inspired by FancySelection by MiRO92.
 
 ![TextMenuPlus](screenshots/menu-keyboard.jpg)
