@@ -29,7 +29,7 @@ jobs:
           bun-version: 1.2.20
 
       - name: Install packaging tools
-        run: brew install ldid dpkg
+        run: HOMEBREW_NO_REQUIRE_TAP_TRUST=1 brew install ldid dpkg
 
       - name: Install pinned Theos and SDK
         env:
