@@ -1,7 +1,7 @@
 TARGET := iphone:clang:16.5:16.0
 ARCHS = arm64 arm64e
 THEOS_PACKAGE_SCHEME = rootless
-LOGOS_DEFAULT_GENERATOR = libhooker
+LOGOS_DEFAULT_GENERATOR = internal
 
 include $(THEOS)/makefiles/common.mk
 
