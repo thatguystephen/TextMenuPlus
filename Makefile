@@ -8,6 +8,7 @@ TWEAK_NAME = TextMenuPlus
 
 TextMenuPlus_FILES = Tweak.x
 TextMenuPlus_CFLAGS = -fobjc-arc -Wno-error=deprecated-declarations
+TextMenuPlus_LDFLAGS = -Wl,-undefined,dynamic_lookup
 
 include $(THEOS)/makefiles/tweak.mk
 
