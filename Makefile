@@ -14,3 +14,5 @@ include $(THEOS)/makefiles/tweak.mk
 after-stage::
 	mkdir -p "$(THEOS_STAGING_DIR)/Library/Application Support/TextMenuPlus"
 	cp "$(CURDIR)/Resources/com.schlub51.textmenuplus.styles.plist" "$(THEOS_STAGING_DIR)/Library/Application Support/TextMenuPlus/com.schlub51.textmenuplus.styles.plist"
+	mkdir -p "$(THEOS_STAGING_DIR)/Library/PreferenceLoader/Preferences"
+	cp "$(CURDIR)/Resources/PreferenceLoader/Preferences/com.schlub51.textmenuplus.plist" "$(THEOS_STAGING_DIR)/Library/PreferenceLoader/Preferences/com.schlub51.textmenuplus.plist"

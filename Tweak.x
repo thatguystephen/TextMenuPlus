@@ -1205,10 +1205,67 @@ static NSString *FSSpongebobText(NSString *text) {
 	return result;
 }
 
+static NSUInteger FSTMP17LeafCount(id object) {
+	if([object isKindOfClass:[UIMenu class]]) {
+		NSUInteger count = 0;
+		for(id child in [(UIMenu *)object children]) count += FSTMP17LeafCount(child);
+		return count;
+	}
+	if([object isKindOfClass:[NSArray class]]) {
+		NSUInteger count = 0;
+		for(id child in (NSArray *)object) count += FSTMP17LeafCount(child);
+		return count;
+	}
+	return object != nil ? 1 : 0;
+}
+
+static void FSTMP17LogMenuResult(id result, NSString *stage) {
+	if(!FSDebugEnabled()) return;
+	NSUInteger top = [result isKindOfClass:[NSArray class]] ? [(NSArray *)result count] :
+		([result isKindOfClass:[UIMenu class]] ? [(UIMenu *)result children].count : 0);
+	NSString *kind = [result isKindOfClass:[NSArray class]] ? @"NSArray" :
+		([result isKindOfClass:[UIMenu class]] ? @"UIMenu" : @"other");
+	FSLog([NSString stringWithFormat:@"[TMP17] menu %@ bundle=%@ result=%@ top=%lu leaves=%lu", stage,
+		[[NSBundle mainBundle] bundleIdentifier] ?: @"", kind, (unsigned long)top,
+		(unsigned long)FSTMP17LeafCount(result)]);
+}
+
+static void FSTMP17LogAvailability(void) {
+	if(!FSDebugEnabled()) return;
+	for(NSString *name in @[@"_UIEditMenuProvider", @"_UIContextMenuInteractionBasedTextContextInteraction",
+		@"_UIEditMenuListView", @"_UIEditMenuListViewCell", @"_UIEditMenuPresentation", @"UIResponder",
+		@"UITextContextMenuInteraction", @"_UIEditMenuContentPresentation"]) {
+		Class cls = objc_getClass(name.UTF8String);
+		FSLog([NSString stringWithFormat:@"[TMP17] availability class=%@ present=%@ axis=%@ layout=%@", name,
+			cls ? @"YES" : @"NO", [cls instancesRespondToSelector:@selector(_listViewAxisForTraitCollection:)] ? @"YES" : @"NO",
+			[cls instancesRespondToSelector:@selector(layoutSubviews)] ? @"YES" : @"NO"]);
+	}
+}
+
+static void FSTMP17LogListState(id object, NSString *stage, NSInteger axis) {
+	if(!FSDebugEnabled() || ![object isKindOfClass:[UIView class]]) return;
+	UIView *view = object;
+	UICollectionView *collection = [object isKindOfClass:[UICollectionView class]] ? object : nil;
+	FSLog([NSString stringWithFormat:@"[TMP17] list %@ class=%@ axis=%ld bounds=%@ frame=%@ size=%@ offset=%@ visible=%lu", stage,
+		NSStringFromClass([object class]), (long)axis, NSStringFromCGRect(view.bounds), NSStringFromCGRect(view.frame),
+		collection ? NSStringFromCGSize(collection.contentSize) : @"n/a", collection ? NSStringFromCGPoint(collection.contentOffset) : @"n/a",
+		(unsigned long)(collection ? collection.visibleCells.count : 0)]);
+}
+
+static void FSTMP17LogCollection(id collection, NSString *stage) {
+	if(!FSDebugEnabled() || ![collection isKindOfClass:[UICollectionView class]]) return;
+	UICollectionView *view = collection;
+	FSLog([NSString stringWithFormat:@"[TMP17] collection %@ class=%@ layout=%@ size=%@ offset=%@ section0=%lu visible=%lu", stage,
+		NSStringFromClass([view class]), NSStringFromClass([view.collectionViewLayout class]), NSStringFromCGSize(view.contentSize),
+		NSStringFromCGPoint(view.contentOffset), (unsigned long)[view numberOfItemsInSection:0], (unsigned long)view.visibleCells.count]);
+}
+
 %hook _UIEditMenuProvider
 
 + (id)menuElementsFromResponderChain:(id)responderChain atLocation:(CGPoint)location inCoordinateSpace:(id)coordinateSpace includeMenuControllerItems:(BOOL)includeMenuControllerItems {
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] menu entry provider bundle=%@", [[NSBundle mainBundle] bundleIdentifier] ?: @""]);
 	id result = %orig(responderChain, location, coordinateSpace, includeMenuControllerItems);
+	FSTMP17LogMenuResult(result, @"exit provider");
 	if(!FSShouldRun()) {
 		return result;
 	}
@@ -1220,7 +1277,9 @@ static NSString *FSSpongebobText(NSString *text) {
 %hook _UIContextMenuInteractionBasedTextContextInteraction
 
 - (id)_editMenuForSuggestedActions:(id)suggestedActions rvItem:(id)rvItem isEditMenu:(BOOL)isEditMenu {
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] menu entry legacy interaction bundle=%@", [[NSBundle mainBundle] bundleIdentifier] ?: @""]);
 	id result = %orig(suggestedActions, rvItem, isEditMenu);
+	FSTMP17LogMenuResult(result, @"exit legacy interaction");
 	if(!FSShouldRun()) {
 		return result;
 	}
@@ -1236,6 +1295,7 @@ static NSString *FSSpongebobText(NSString *text) {
 
 - (id)initWithMenu:(id)menu titleView:(id)titleView {
 	id result = %orig(menu, titleView);
+	FSTMP17LogListState(result, @"init", [result respondsToSelector:@selector(axis)] ? [result axis] : -1);
 	if(!FSShouldRun()) {
 		return result;
 	}
@@ -1245,6 +1305,7 @@ static NSString *FSSpongebobText(NSString *text) {
 
 - (void)reloadWithMenu:(id)menu titleView:(id)titleView animated:(BOOL)animated {
 	%orig(menu, titleView, animated);
+	FSTMP17LogListState((id)self, @"reload", [self respondsToSelector:@selector(axis)] ? [self axis] : -1);
 	if(!FSShouldRun()) {
 		return;
 	}
@@ -1252,10 +1313,12 @@ static NSString *FSSpongebobText(NSString *text) {
 }
 
 - (void)layoutSubviews {
+	FSTMP17LogListState((id)self, @"layout before", [self respondsToSelector:@selector(axis)] ? [self axis] : -1);
 	if(FSShouldRun()) {
 		FSForceVerticalAxis((id)self, @"_UIEditMenuListView layoutSubviews");
 	}
 	%orig;
+	FSTMP17LogListState((id)self, @"layout after", [self respondsToSelector:@selector(axis)] ? [self axis] : -1);
 	if(!FSShouldRun()) {
 		return;
 	}
@@ -1271,6 +1334,7 @@ static NSString *FSSpongebobText(NSString *text) {
 
 - (CGSize)_verticalMenuContentSizeFittingContainer:(id)container containerSize:(CGSize)containerSize traits:(id)traits {
 	CGSize size = %orig(container, containerSize, traits);
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] sizing fitting input=%@ output=%@", NSStringFromCGSize(containerSize), NSStringFromCGSize(size)]);
 	if(!FSShouldRun()) {
 		return size;
 	}
@@ -1281,6 +1345,7 @@ static NSString *FSSpongebobText(NSString *text) {
 
 - (CGSize)intrinsicContentSizeForContainer:(id)container containerSize:(CGSize)containerSize {
 	CGSize size = %orig(container, containerSize);
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] sizing intrinsic input=%@ output=%@", NSStringFromCGSize(containerSize), NSStringFromCGSize(size)]);
 	if(!FSShouldRun()) {
 		return size;
 	}
@@ -1291,6 +1356,7 @@ static NSString *FSSpongebobText(NSString *text) {
 
 - (void)collectionView:(id)collectionView willDisplayCell:(id)cell forItemAtIndexPath:(id)indexPath {
 	%orig(collectionView, cell, indexPath);
+	FSTMP17LogCollection(collectionView, @"will display");
 	if(!FSShouldRun()) {
 		return;
 	}
@@ -1323,10 +1389,32 @@ static NSString *FSSpongebobText(NSString *text) {
 
 - (NSInteger)_listViewAxisForTraitCollection:(id)traitCollection {
 	NSInteger originalAxis = %orig(traitCollection);
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] presentation axis class=%@ original=%ld", NSStringFromClass([self class]), (long)originalAxis]);
 	if(!FSShouldRun()) {
 		return originalAxis;
 	}
 	return 1;
+}
+
+%end
+
+%hook UITextContextMenuInteraction
+
+- (id)_editMenuForCurrentSelectionWithSuggestedActions:(id)suggestedActions isEditMenu:(BOOL)isEditMenu {
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] menu entry UITextContextMenuInteraction bundle=%@", [[NSBundle mainBundle] bundleIdentifier] ?: @""]);
+	id result = %orig(suggestedActions, isEditMenu);
+	FSTMP17LogMenuResult(result, @"exit UITextContextMenuInteraction");
+	return result;
+}
+
+%end
+
+%hook _UIEditMenuContentPresentation
+
+- (NSInteger)_listViewAxisForTraitCollection:(id)traitCollection {
+	NSInteger result = %orig(traitCollection);
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] content presentation axis class=%@ original=%ld", NSStringFromClass([self class]), (long)result]);
+	return result;
 }
 
 %end
@@ -1467,3 +1555,8 @@ static NSString *FSSpongebobText(NSString *text) {
 }
 
 %end
+
+%ctor {
+	%init;
+	FSTMP17LogAvailability();
+}

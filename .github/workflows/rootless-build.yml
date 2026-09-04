@@ -1,0 +1,116 @@
+name: Rootless Theos package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  THEOS_COMMIT: 17f8af2808cbdf8b35f26077270c9a6b3f91f5d8 # Theos 2.5
+  SDK_COMMIT: 146e41ff2c292168388929e43c9b4de2f00e36b3 # sdks master-146e41f
+  SDK_NAME: iPhoneOS16.5.sdk
+  SDK_SHA256: 5e0fd3f01266cce4ce012d4a99b38eb56578fca40d09edc81cd83dee958202fb
+
+jobs:
+  package:
+    runs-on: macos-14
+    steps:
+      - name: Checkout source # actions/checkout v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun # oven-sh/setup-bun v2.0.2
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        with:
+          bun-version: 1.2.20
+
+      - name: Install packaging tools
+        run: brew install ldid dpkg
+
+      - name: Install pinned Theos and SDK
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
+          git -C "$THEOS" submodule update --init --recursive
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/$SDK_NAME.tar.xz" \
+            "https://github.com/theos/sdks/releases/download/master-146e41f/$SDK_NAME.tar.xz"
+          printf '%s  %s\n' "$SDK_SHA256" "$RUNNER_TEMP/$SDK_NAME.tar.xz" | shasum -a 256 -c -
+          mkdir -p "$THEOS/sdks"
+          tar -xJf "$RUNNER_TEMP/$SDK_NAME.tar.xz" -C "$THEOS/sdks"
+          test -d "$THEOS/sdks/$SDK_NAME"
+          printf 'THEOS=%s\n' "$THEOS" >> "$GITHUB_ENV"
+          printf 'THEOS_COMMIT=%s\n' "$(git -C "$THEOS" rev-parse HEAD)" >> "$GITHUB_ENV"
+          printf 'SDK_COMMIT=%s\n' "$SDK_COMMIT" >> "$GITHUB_ENV"
+
+      - name: Build deterministic rootless package
+        run: |
+          make clean package FINALPACKAGE=1
+          mkdir -p dist/packages dist/symbols
+          find packages -maxdepth 1 -type f -name '*.deb' -exec cp -p {} dist/packages/ \;
+          test -n "$(find dist/packages -type f -name '*.deb' -print -quit)"
+          for arch in arm64 arm64e; do
+            found=0
+            object_root=".theos/obj/debug/$arch"
+            while IFS= read -r binary; do
+              [ -n "$binary" ] || continue
+              relative_binary="${binary#"$object_root"/}"
+              destination="dist/symbols/$arch/$relative_binary"
+              mkdir -p "$(dirname "$destination")"
+              cp -p "$binary" "$destination"
+              found=1
+            done < <(find "$object_root" -type f \( -name '*.dylib' -o -perm -111 \) -print 2>/dev/null)
+            test "$found" = 1
+          done
+          shasum -a 256 dist/packages/*.deb $(find dist/symbols -type f -print | sort) | sed 's#  dist/#  #' > dist/SHA256SUMS
+          XCODE_VERSION="$(xcodebuild -version | tr '\n' ';')"
+          export XCODE_VERSION
+          bun -e '
+            const { readdir } = require("node:fs/promises");
+            const { join } = require("node:path");
+            const crypto = require("node:crypto");
+            const files = async (dir, prefix = "") => {
+              const entries = (await readdir(join(dir, prefix), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+              const result = [];
+              for (const entry of entries) {
+                const path = prefix + entry.name;
+                if (entry.isDirectory()) result.push(...await files(dir, path + "/"));
+                else result.push(path);
+              }
+              return result;
+            };
+            const digest = async (path) => crypto.createHash("sha256").update(new Uint8Array(await Bun.file(path).arrayBuffer())).digest("hex");
+            const packages = await files("dist/packages");
+            const symbols = await files("dist/symbols");
+            const manifest = {
+              schemaVersion: 1,
+              repository: process.env.GITHUB_REPOSITORY,
+              sourceCommit: process.env.GITHUB_SHA,
+              workflowRun: { url: process.env.GITHUB_SERVER_URL + "/" + process.env.GITHUB_REPOSITORY + "/actions/runs/" + process.env.GITHUB_RUN_ID, id: process.env.GITHUB_RUN_ID },
+              theos: { commit: process.env.THEOS_COMMIT },
+              sdk: { commit: process.env.SDK_COMMIT, selected: process.env.SDK_NAME },
+              xcodeVersion: process.env.XCODE_VERSION,
+              target: "iphone:clang:16.5:15.0",
+              scheme: "rootless",
+              architectures: ["arm64", "arm64e"],
+              packages: await Promise.all(packages.map(async (filename) => ({ filename: "packages/" + filename, sha256: await digest(join("dist/packages", filename)) }))),
+              unstrippedBinaries: await Promise.all(symbols.map(async (filename) => ({ filename: "symbols/" + filename, architectures: filename.startsWith("arm64e/") ? ["arm64e"] : ["arm64"], sha256: await digest(join("dist/symbols", filename)) })))
+            };
+            await Bun.write("dist/build-manifest.json", JSON.stringify(manifest, null, 2) + "\n");
+          '
+
+      - name: Inspect package metadata
+        run: |
+          for package in dist/packages/*.deb; do dpkg-deb --info "$package"; done
+
+      - name: Upload package and provenance # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: com.schlub51.textmenuplus-rootless-package
+          path: dist/
+          if-no-files-found: error
