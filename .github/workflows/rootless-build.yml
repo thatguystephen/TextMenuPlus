@@ -35,6 +35,7 @@ jobs:
         env:
           THEOS: ${{ runner.temp }}/theos
         run: |
+          git config --global url."https://github.com/".insteadOf git://github.com/
           git clone --recursive https://github.com/theos/theos.git "$THEOS"
           git -C "$THEOS" checkout --detach "$THEOS_COMMIT"
           git -C "$THEOS" submodule update --init --recursive
