@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  THEOS_COMMIT: 17f8af2808cbdf8b35f26077270c9a6b3f91f5d8 # Theos 2.5
+  THEOS_COMMIT: 5280bd038207e14f8bd76f5417aa2fe641c03228 # Theos rootless scheme staging support
   SDK_COMMIT: 146e41ff2c292168388929e43c9b4de2f00e36b3 # sdks master-146e41f
   SDK_NAME: iPhoneOS16.5.sdk
   SDK_SHA256: 5e0fd3f01266cce4ce012d4a99b38eb56578fca40d09edc81cd83dee958202fb
