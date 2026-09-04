@@ -57,7 +57,7 @@ jobs:
           test -n "$(find dist/packages -type f -name '*.deb' -print -quit)"
           for arch in arm64 arm64e; do
             found=0
-            object_root=".theos/obj/debug/$arch"
+            object_root=".theos/obj/$arch"
             while IFS= read -r binary; do
               [ -n "$binary" ] || continue
               relative_binary="${binary#"$object_root"/}"
