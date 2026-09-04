@@ -1305,7 +1305,7 @@ static void FSTMP17LogCollection(id collection, NSString *stage) {
 
 - (void)reloadWithMenu:(id)menu titleView:(id)titleView animated:(BOOL)animated {
 	%orig(menu, titleView, animated);
-	FSTMP17LogListState((id)self, @"reload", [self respondsToSelector:@selector(axis)] ? [self axis] : -1);
+	FSTMP17LogListState((id)self, @"reload", [(id)self respondsToSelector:@selector(axis)] ? [(id)self axis] : -1);
 	if(!FSShouldRun()) {
 		return;
 	}
@@ -1313,12 +1313,12 @@ static void FSTMP17LogCollection(id collection, NSString *stage) {
 }
 
 - (void)layoutSubviews {
-	FSTMP17LogListState((id)self, @"layout before", [self respondsToSelector:@selector(axis)] ? [self axis] : -1);
+	FSTMP17LogListState((id)self, @"layout before", [(id)self respondsToSelector:@selector(axis)] ? [(id)self axis] : -1);
 	if(FSShouldRun()) {
 		FSForceVerticalAxis((id)self, @"_UIEditMenuListView layoutSubviews");
 	}
 	%orig;
-	FSTMP17LogListState((id)self, @"layout after", [self respondsToSelector:@selector(axis)] ? [self axis] : -1);
+	FSTMP17LogListState((id)self, @"layout after", [(id)self respondsToSelector:@selector(axis)] ? [(id)self axis] : -1);
 	if(!FSShouldRun()) {
 		return;
 	}
@@ -1389,7 +1389,7 @@ static void FSTMP17LogCollection(id collection, NSString *stage) {
 
 - (NSInteger)_listViewAxisForTraitCollection:(id)traitCollection {
 	NSInteger originalAxis = %orig(traitCollection);
-	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] presentation axis class=%@ original=%ld", NSStringFromClass([self class]), (long)originalAxis]);
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] presentation axis class=%@ original=%ld", NSStringFromClass([(id)self class]), (long)originalAxis]);
 	if(!FSShouldRun()) {
 		return originalAxis;
 	}
@@ -1413,7 +1413,7 @@ static void FSTMP17LogCollection(id collection, NSString *stage) {
 
 - (NSInteger)_listViewAxisForTraitCollection:(id)traitCollection {
 	NSInteger result = %orig(traitCollection);
-	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] content presentation axis class=%@ original=%ld", NSStringFromClass([self class]), (long)result]);
+	if(FSDebugEnabled()) FSLog([NSString stringWithFormat:@"[TMP17] content presentation axis class=%@ original=%ld", NSStringFromClass([(id)self class]), (long)result]);
 	return result;
 }
 
